@@ -4,66 +4,21 @@ import { useState } from 'react'
 import { ShoppingBag, Check, QrCode } from 'lucide-react'
 import type { Product, SelectedOptions } from '@/lib/types'
 import { calculatePrice, formatPrice } from '@/lib/priceCalculator'
+import { getSwatchColor } from '@/lib/swatches'
 import { useCart } from '@/context/CartContext'
 
-const WOOD_SWATCHES: Record<string, string> = {
-  oak: '#C8A97A',
-  walnut: '#6B4226',
-  ebony: '#1C1008',
+interface Props {
+  product: Product
+  selected: SelectedOptions
+  onSelect: (group: string, value: string) => void
 }
 
-const FABRIC_SWATCHES: Record<string, string> = {
-  linen: '#D9CCBA',
-  velvet: '#7C6D8A',
-  boucle: '#E8E0D0',
-  performance: '#B0B8C1',
-  leather: '#8B5E3C',
-}
-
-const LEG_SWATCHES: Record<string, string> = {
-  oak: '#C8A97A',
-  walnut: '#6B4226',
-  'black-metal': '#2A2A2A',
-}
-
-const SEAT_SWATCHES: Record<string, string> = {
-  linen: '#D9CCBA',
-  velvet: '#7C6D8A',
-  leather: '#8B5E3C',
-}
-
-const FRAME_SWATCHES: Record<string, string> = {
-  oak: '#C8A97A',
-  walnut: '#6B4226',
-  black: '#2A2A2A',
-}
-
-function getSwatchColor(groupKey: string, value: string): string | undefined {
-  const maps: Record<string, Record<string, string>> = {
-    finish: WOOD_SWATCHES,
-    fabric: FABRIC_SWATCHES,
-    legs: LEG_SWATCHES,
-    seat: SEAT_SWATCHES,
-    frame: FRAME_SWATCHES,
-  }
-  return maps[groupKey]?.[value]
-}
-
-export default function ProductConfigurator({ product }: { product: Product }) {
+export default function ProductConfigurator({ product, selected, onSelect }: Props) {
   const { addToCart } = useCart()
   const [added, setAdded] = useState(false)
   const [qrHint, setQrHint] = useState(false)
 
-  const defaultOptions: SelectedOptions = Object.fromEntries(
-    product.options.map((g) => [g.name, g.choices[0]?.value ?? ''])
-  )
-  const [selected, setSelected] = useState<SelectedOptions>(defaultOptions)
-
   const price = calculatePrice(product, selected)
-
-  function handleSelect(groupName: string, value: string) {
-    setSelected((prev) => ({ ...prev, [groupName]: value }))
-  }
 
   function handleAddToCart() {
     addToCart(product, selected)
@@ -114,14 +69,13 @@ export default function ProductConfigurator({ product }: { product: Product }) {
             </div>
 
             {isToggle ? (
-              /* Toggle buttons — for sizes, sections, shapes */
               <div className="flex flex-wrap gap-2">
                 {group.choices.map((choice) => {
                   const active = selectedVal === choice.value
                   return (
                     <button
                       key={choice.value}
-                      onClick={() => handleSelect(group.name, choice.value)}
+                      onClick={() => onSelect(group.name, choice.value)}
                       className={`px-4 py-2 rounded-sm text-sm border transition-colors ${
                         active
                           ? 'bg-kova-dark text-white border-kova-dark'
@@ -139,23 +93,17 @@ export default function ProductConfigurator({ product }: { product: Product }) {
                 })}
               </div>
             ) : (
-              /* Swatches — for fabrics, finishes, legs */
               <div className="flex flex-wrap gap-3">
                 {group.choices.map((choice) => {
                   const active = selectedVal === choice.value
-                  const swatchColor = getSwatchColor(
-                    group.choices[0] ? group.name.toLowerCase().replace(' ', '') : group.name,
-                    choice.value
-                  ) ?? getSwatchColor(
-                    // try the key field too
-                    (group as any).key ?? '',
-                    choice.value
-                  )
+                  const swatchColor =
+                    choice.swatchColor ??
+                    getSwatchColor(group.name, choice.value)
 
                   return (
                     <button
                       key={choice.value}
-                      onClick={() => handleSelect(group.name, choice.value)}
+                      onClick={() => onSelect(group.name, choice.value)}
                       title={choice.label}
                       className={`relative w-9 h-9 rounded-full border-2 transition-all ${
                         active
@@ -194,7 +142,6 @@ export default function ProductConfigurator({ product }: { product: Product }) {
           )}
         </button>
 
-        {/* QR share — coming soon */}
         <div className="relative">
           <button
             className="h-full px-4 border border-kova-border rounded-sm text-kova-mid hover:border-kova-brown hover:text-kova-brown transition-colors"
