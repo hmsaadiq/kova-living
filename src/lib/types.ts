@@ -4,14 +4,20 @@ export interface OptionChoice {
   label: string
   value: string
   priceModifier: number
-  swatchColor?: string   // hex — for fabric/finish color swatches
+  swatchColor?: string   // hex — for fabric/finish color swatches + 3D material color
   swatchImage?: string   // URL — for material/texture swatches
+  image?: string         // URL — full product photo shown when this choice is active (image-swap mode)
+  roughness?: number     // 0–1, for 3D material (lower = shinier). default 0.8
+  metalness?: number     // 0–1, for 3D material. default 0
 }
 
 export interface OptionGroup {
-  name: string           // "Fabric", "Legs", "Size"
+  name: string               // "Seat Cushion", "Back Left", "Legs"
   type: 'swatch' | 'toggle' | 'select'
   choices: OptionChoice[]
+  isLayer?: boolean          // PNG layer mode: choice images are transparent PNGs stacked over baseLayer
+  layerOrder?: number        // PNG layer mode: z-index order (lower = bottom)
+  meshName?: string          // 3D mode: name of the mesh in the GLB this group controls
 }
 
 export interface Product {
@@ -19,10 +25,12 @@ export interface Product {
   slug: string
   name: string
   description: string
-  base_price: number     // USD cents
+  base_price: number         // USD cents
   category: 'living-room' | 'bedroom' | 'dining'
-  images: string[]       // ordered — first is primary
+  images: string[]           // ordered — first is primary (used when no 3D model / layers)
   options: OptionGroup[]
+  model_url?: string         // GLB/GLTF URL — enables 3D configurator mode
+  base_layer?: string        // PNG layer mode: frame/skeleton image at bottom of stack
   featured?: boolean
   created_at?: string
 }
