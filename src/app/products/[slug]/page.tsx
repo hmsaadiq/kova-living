@@ -4,6 +4,8 @@ import type { Product } from '@/lib/types'
 import type { Metadata } from 'next'
 import ProductPageClient from '@/components/products/ProductPageClient'
 
+export const dynamic = 'force-dynamic'
+
 type Props = { params: Promise<{ slug: string }> }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {

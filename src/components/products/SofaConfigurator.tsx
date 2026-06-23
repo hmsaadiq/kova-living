@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, Suspense, useMemo } from 'react'
+import { useEffect, useRef, Suspense, useMemo, useState, useCallback } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import { useGLTF, OrbitControls, Environment, ContactShadows } from '@react-three/drei'
 import * as THREE from 'three'
@@ -12,6 +12,16 @@ function SofaModel({ product, selected }: { product: Product; selected: Selected
   const { scene } = useGLTF(product.model_url!)
   const cloned = useMemo(() => scene.clone(true), [scene])
   const materialsRef = useRef<Map<string, THREE.MeshStandardMaterial>>(new Map())
+
+  // Debug: log all mesh names in the loaded model
+  useEffect(() => {
+    console.log('[SofaModel] All mesh names in GLB:')
+    cloned.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        console.log(' -', child.name)
+      }
+    })
+  }, [cloned])
 
   // Build a map of meshName → option group for quick lookup
   const meshOptionMap = useMemo(() => {
@@ -59,22 +69,32 @@ function SofaModel({ product, selected }: { product: Product; selected: Selected
 // ─── Scene ───────────────────────────────────────────────────────────────────
 
 function Scene({ product, selected }: { product: Product; selected: SelectedOptions }) {
+  const [camTarget, setCamTarget] = useState(new THREE.Vector3(0, 0.5, 0))
+  const [camDistance, setCamDistance] = useState(3)
+
+  const handleReady = useCallback((center: THREE.Vector3, distance: number) => {
+    setCamTarget(center)
+    setCamDistance(distance)
+  }, [])
+
   return (
     <>
-      <ambientLight intensity={0.4} />
-      <directionalLight position={[5, 8, 5]} intensity={1.2} castShadow />
+      <CameraSetup target={camTarget} distance={camDistance} />
+      <ambientLight intensity={0.5} />
+      <directionalLight position={[5, 8, 5]} intensity={1.0} />
       <Environment preset="apartment" />
 
       <Suspense fallback={null}>
         <SofaModel product={product} selected={selected} />
+        <SceneBounds onReady={handleReady} />
       </Suspense>
 
       <ContactShadows
         position={[0, -0.01, 0]}
-        opacity={0.4}
-        scale={4}
-        blur={2}
-        far={2}
+        opacity={0.35}
+        scale={10}
+        blur={2.5}
+        far={4}
       />
     </>
   )
@@ -82,12 +102,28 @@ function Scene({ product, selected }: { product: Product; selected: SelectedOpti
 
 // ─── Camera reset helper ──────────────────────────────────────────────────────
 
-function CameraSetup() {
+function CameraSetup({ target, distance }: { target: THREE.Vector3; distance: number }) {
   const { camera } = useThree()
   useEffect(() => {
-    camera.position.set(2.5, 1.2, 3)
-    camera.lookAt(0, 0.4, 0)
-  }, [camera])
+    camera.position.set(
+      target.x + distance * 0.8,
+      target.y + distance * 0.5,
+      target.z + distance * 1.0
+    )
+    camera.lookAt(target)
+  }, [camera, target, distance])
+  return null
+}
+
+function SceneBounds({ onReady }: { onReady: (center: THREE.Vector3, distance: number) => void }) {
+  const { scene } = useThree()
+  useEffect(() => {
+    const box = new THREE.Box3().setFromObject(scene)
+    const center = box.getCenter(new THREE.Vector3())
+    const size = box.getSize(new THREE.Vector3())
+    const maxDim = Math.max(size.x, size.y, size.z)
+    onReady(center, maxDim * 1.2)
+  }, [scene, onReady])
   return null
 }
 
@@ -104,8 +140,18 @@ export default function SofaConfigurator({
 
   return (
     <div className="w-full aspect-[4/3] bg-[#EDE8E0] rounded-sm overflow-hidden">
-      <Canvas shadows dpr={[1, 2]} gl={{ antialias: true }}>
-        <CameraSetup />
+      <Canvas
+        dpr={[1, 1.5]}
+        gl={{
+          antialias: true,
+          powerPreference: 'high-performance',
+        }}
+        onCreated={({ gl }) => {
+          gl.shadowMap.enabled = true
+          gl.shadowMap.type = THREE.PCFShadowMap
+        }}
+      >
+        {/* CameraSetup is now inside Scene, driven by model bounds */}
         <Scene product={product} selected={selected} />
         <OrbitControls
           enablePan={false}

@@ -1,6 +1,7 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
+  reactStrictMode: false, // prevents double-mount killing WebGL context in dev
   turbopack: {
     root: __dirname,
   },
