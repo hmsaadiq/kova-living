@@ -9,6 +9,9 @@ export interface OptionChoice {
   image?: string         // URL — full product photo shown when this choice is active (image-swap mode)
   roughness?: number     // 0–1, for 3D material (lower = shinier). default 0.8
   metalness?: number     // 0–1, for 3D material. default 0
+  textureUrl?: string    // diffuse/albedo texture map URL
+  roughnessUrl?: string  // roughness map URL (jpg/png only)
+  aoUrl?: string         // ambient occlusion map URL
 }
 
 export interface OptionGroup {
@@ -17,7 +20,10 @@ export interface OptionGroup {
   choices: OptionChoice[]
   isLayer?: boolean          // PNG layer mode: choice images are transparent PNGs stacked over baseLayer
   layerOrder?: number        // PNG layer mode: z-index order (lower = bottom)
-  meshName?: string          // 3D mode: name of the mesh in the GLB this group controls
+  meshName?: string          // 3D mode: single mesh name in the GLB this group controls
+  meshNames?: string[]        // 3D mode: multiple meshes controlled by this group (all get same material)
+  materialName?: string      // 3D mode: single material name in the GLB this group controls
+  materialNames?: string[]    // 3D mode: multiple material names controlled by this group
 }
 
 export interface Product {

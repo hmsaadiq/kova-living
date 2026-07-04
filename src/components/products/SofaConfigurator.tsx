@@ -1,80 +1,176 @@
 'use client'
 
-import { useEffect, useRef, Suspense, useMemo, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback, Suspense } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import { useGLTF, OrbitControls, Environment, ContactShadows } from '@react-three/drei'
 import * as THREE from 'three'
-import type { Product, SelectedOptions } from '@/lib/types'
+import type { OptionChoice, Product, SelectedOptions } from '@/lib/types'
 
 // ─── Model ───────────────────────────────────────────────────────────────────
+
+const warnedTextureUrls = new Set<string>()
+
+function normalizeModelName(value: string) {
+  return value.trim().toLowerCase().replace(/[\s_-]+/g, ' ')
+}
+
+function materialNames(material: THREE.Material | THREE.Material[]) {
+  const materials = Array.isArray(material) ? material : [material]
+  return materials.map((mat) => mat.name).filter(Boolean)
+}
+
+function configureTexture(tex: THREE.Texture) {
+  tex.flipY = false
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  tex.repeat.set(3, 3)
+}
+
+function loadMaterialTexture(
+  loader: THREE.TextureLoader,
+  url: string,
+  onLoad: (tex: THREE.Texture) => void
+) {
+  loader.load(
+    url,
+    (tex) => {
+      configureTexture(tex)
+      onLoad(tex)
+    },
+    undefined,
+    () => {
+      if (!warnedTextureUrls.has(url)) {
+        warnedTextureUrls.add(url)
+        console.warn(`[SofaConfigurator] Could not load texture: ${url}`)
+      }
+    }
+  )
+}
+
+function createMaterial(choice: OptionChoice, loader: THREE.TextureLoader) {
+  const mat = new THREE.MeshStandardMaterial({
+    color: choice.swatchColor ?? '#ffffff',
+    roughness: choice.roughness ?? 0.8,
+    metalness: choice.metalness ?? 0,
+  })
+
+  if (choice.textureUrl) {
+    loadMaterialTexture(loader, choice.textureUrl, (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace
+      mat.map = tex
+      mat.needsUpdate = true
+    })
+  }
+
+  if (choice.roughnessUrl) {
+    loadMaterialTexture(loader, choice.roughnessUrl, (tex) => {
+      mat.roughnessMap = tex
+      mat.needsUpdate = true
+    })
+  }
+
+  if (choice.aoUrl) {
+    loadMaterialTexture(loader, choice.aoUrl, (tex) => {
+      mat.aoMap = tex
+      mat.aoMapIntensity = 1
+      mat.needsUpdate = true
+    })
+  }
+
+  return mat
+}
+
+function ensureAoUvs(geometry: THREE.BufferGeometry) {
+  if (!geometry.attributes.uv || geometry.attributes.uv2) return
+  geometry.setAttribute('uv2', geometry.attributes.uv)
+}
 
 function SofaModel({ product, selected }: { product: Product; selected: SelectedOptions }) {
   const { scene } = useGLTF(product.model_url!)
   const cloned = useMemo(() => scene.clone(true), [scene])
-  const materialsRef = useRef<Map<string, THREE.MeshStandardMaterial>>(new Map())
+  const textureLoader = useMemo(() => new THREE.TextureLoader(), [])
 
-  // Debug: log all mesh names in the loaded model
-  useEffect(() => {
-    console.log('[SofaModel] All mesh names in GLB:')
-    cloned.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
-        console.log(' -', child.name)
-      }
-    })
-  }, [cloned])
-
-  // Build a map of meshName → option group for quick lookup
   const meshOptionMap = useMemo(() => {
-    const map = new Map<string, { groupName: string }>()
+    const map = new Map<string, string>() // meshName → group.name
     for (const group of product.options) {
-      if (group.meshName) map.set(group.meshName, { groupName: group.name })
+      const names = group.meshNames ?? (group.meshName ? [group.meshName] : [])
+      for (const name of names) map.set(normalizeModelName(name), group.name)
     }
     return map
   }, [product.options])
 
-  // Apply materials whenever selection changes
+  const materialOptionMap = useMemo(() => {
+    const map = new Map<string, string>() // materialName → group.name
+    for (const group of product.options) {
+      const names = group.materialNames ?? (group.materialName ? [group.materialName] : [])
+      for (const name of names) map.set(normalizeModelName(name), group.name)
+    }
+    return map
+  }, [product.options])
+
+  const offset = useMemo(() => {
+    const box = new THREE.Box3().setFromObject(cloned)
+    const center = box.getCenter(new THREE.Vector3())
+    return [-center.x, -center.y, -center.z] as [number, number, number]
+  }, [cloned])
+
   useEffect(() => {
-    cloned.traverse((child) => {
-      if (!(child instanceof THREE.Mesh)) return
+    cloned.traverse((node) => {
+      if (!(node instanceof THREE.Mesh)) return
 
-      const mapping = meshOptionMap.get(child.name)
-      if (!mapping) return
+      const groupName =
+        meshOptionMap.get(normalizeModelName(node.name)) ??
+        materialNames(node.material)
+          .map(normalizeModelName)
+          .map((name) => materialOptionMap.get(name))
+          .find(Boolean)
 
-      const group = product.options.find((g) => g.name === mapping.groupName)
+      if (!groupName) return
+      const group = product.options.find((g) => g.name === groupName)
       if (!group) return
+      const choice = group.choices.find((c) => c.value === selected[groupName])
+      if (!choice) return
 
-      const choice = group.choices.find((c) => c.value === selected[group.name])
-      if (!choice?.swatchColor) return
-
-      // Reuse cached material or create a new one
-      const cacheKey = `${child.name}-${choice.value}`
-      if (!materialsRef.current.has(cacheKey)) {
-        materialsRef.current.set(
-          cacheKey,
-          new THREE.MeshStandardMaterial({
-            color: new THREE.Color(choice.swatchColor),
-            roughness: choice.roughness ?? 0.8,
-            metalness: choice.metalness ?? 0,
-          })
-        )
-      }
-
-      child.material = materialsRef.current.get(cacheKey)!
+      if (choice.aoUrl) ensureAoUvs(node.geometry)
+      node.material = createMaterial(choice, textureLoader)
     })
-  }, [selected, cloned, meshOptionMap, product.options])
+  }, [selected, cloned, meshOptionMap, materialOptionMap, product.options, textureLoader])
 
-  return <primitive object={cloned} />
+  return (
+    <group position={offset}>
+      <primitive object={cloned} />
+    </group>
+  )
 }
 
 // ─── Scene ───────────────────────────────────────────────────────────────────
 
+function SceneBounds({ onReady }: { onReady: (center: THREE.Vector3, size: number) => void }) {
+  const { scene } = useThree()
+  useEffect(() => {
+    const box = new THREE.Box3().setFromObject(scene)
+    const center = box.getCenter(new THREE.Vector3())
+    const size = box.getSize(new THREE.Vector3())
+    onReady(center, Math.max(size.x, size.y, size.z) * 1.2)
+  }, [scene, onReady])
+  return null
+}
+
+function CameraSetup({ target, distance }: { target: THREE.Vector3; distance: number }) {
+  const { camera } = useThree()
+  useEffect(() => {
+    camera.position.set(target.x + distance * 0.8, target.y + distance * 0.5, target.z + distance)
+    camera.lookAt(target)
+  }, [camera, target, distance])
+  return null
+}
+
 function Scene({ product, selected }: { product: Product; selected: SelectedOptions }) {
-  const [camTarget, setCamTarget] = useState(new THREE.Vector3(0, 0.5, 0))
+  const [camTarget, setCamTarget] = useState(new THREE.Vector3(0, 0, 0))
   const [camDistance, setCamDistance] = useState(3)
 
-  const handleReady = useCallback((center: THREE.Vector3, distance: number) => {
+  const handleReady = useCallback((center: THREE.Vector3, size: number) => {
     setCamTarget(center)
-    setCamDistance(distance)
+    setCamDistance(size)
   }, [])
 
   return (
@@ -83,75 +179,30 @@ function Scene({ product, selected }: { product: Product; selected: SelectedOpti
       <ambientLight intensity={0.5} />
       <directionalLight position={[5, 8, 5]} intensity={1.0} />
       <Environment preset="apartment" />
-
       <Suspense fallback={null}>
         <SofaModel product={product} selected={selected} />
         <SceneBounds onReady={handleReady} />
       </Suspense>
-
-      <ContactShadows
-        position={[0, -0.01, 0]}
-        opacity={0.35}
-        scale={10}
-        blur={2.5}
-        far={4}
-      />
+      <ContactShadows position={[0, -0.01, 0]} opacity={0.35} scale={10} blur={2.5} far={4} />
     </>
   )
 }
 
-// ─── Camera reset helper ──────────────────────────────────────────────────────
+// ─── Export ───────────────────────────────────────────────────────────────────
 
-function CameraSetup({ target, distance }: { target: THREE.Vector3; distance: number }) {
-  const { camera } = useThree()
-  useEffect(() => {
-    camera.position.set(
-      target.x + distance * 0.8,
-      target.y + distance * 0.5,
-      target.z + distance * 1.0
-    )
-    camera.lookAt(target)
-  }, [camera, target, distance])
-  return null
-}
-
-function SceneBounds({ onReady }: { onReady: (center: THREE.Vector3, distance: number) => void }) {
-  const { scene } = useThree()
-  useEffect(() => {
-    const box = new THREE.Box3().setFromObject(scene)
-    const center = box.getCenter(new THREE.Vector3())
-    const size = box.getSize(new THREE.Vector3())
-    const maxDim = Math.max(size.x, size.y, size.z)
-    onReady(center, maxDim * 1.2)
-  }, [scene, onReady])
-  return null
-}
-
-// ─── Exported component ───────────────────────────────────────────────────────
-
-export default function SofaConfigurator({
-  product,
-  selected,
-}: {
-  product: Product
-  selected: SelectedOptions
-}) {
+export default function SofaConfigurator({ product, selected }: { product: Product; selected: SelectedOptions }) {
   if (!product.model_url) return null
 
   return (
     <div className="w-full aspect-[4/3] bg-[#EDE8E0] rounded-sm overflow-hidden">
       <Canvas
         dpr={[1, 1.5]}
-        gl={{
-          antialias: true,
-          powerPreference: 'high-performance',
-        }}
+        gl={{ antialias: true, powerPreference: 'high-performance' }}
         onCreated={({ gl }) => {
           gl.shadowMap.enabled = true
           gl.shadowMap.type = THREE.PCFShadowMap
         }}
       >
-        {/* CameraSetup is now inside Scene, driven by model bounds */}
         <Scene product={product} selected={selected} />
         <OrbitControls
           enablePan={false}
@@ -159,7 +210,7 @@ export default function SofaConfigurator({
           maxPolarAngle={Math.PI / 2.2}
           minDistance={2}
           maxDistance={6}
-          target={[0, 0.4, 0]}
+          target={[0, 0, 0]}
         />
       </Canvas>
     </div>

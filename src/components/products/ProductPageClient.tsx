@@ -13,7 +13,6 @@ const SofaConfigurator = dynamic(() => import('./SofaConfigurator'), { ssr: fals
 const PLACEHOLDER = 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=1200&q=80'
 
 export default function ProductPageClient({ product }: { product: Product }) {
-  console.log('[ProductPageClient] model_url:', product.model_url)
 
   const defaultOptions: SelectedOptions = Object.fromEntries(
     product.options.map((g) => [g.name, g.choices[0]?.value ?? ''])
