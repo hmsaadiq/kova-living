@@ -48,7 +48,7 @@ function loadMaterialTexture(
 
 function createMaterial(choice: OptionChoice, loader: THREE.TextureLoader) {
   const mat = new THREE.MeshStandardMaterial({
-    color: choice.swatchColor ?? '#ffffff',
+    color: choice.textureUrl ? '#ffffff' : (choice.swatchColor ?? '#ffffff'),
     roughness: choice.roughness ?? 0.8,
     metalness: choice.metalness ?? 0,
   })

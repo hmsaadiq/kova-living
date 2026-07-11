@@ -7,10 +7,28 @@ import type { Product, SelectedOptions } from '@/lib/types'
 import ProductConfigurator from './ProductConfigurator'
 import LayeredViewer from './LayeredViewer'
 
-// Canvas cannot run on the server — load client-only
 const SofaConfigurator = dynamic(() => import('./SofaConfigurator'), { ssr: false })
 
 const PLACEHOLDER = 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=1200&q=80'
+
+function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="relative max-w-4xl w-full aspect-[4/3]" onClick={(e) => e.stopPropagation()}>
+        <Image src={src} alt={alt} fill className="object-contain" sizes="90vw" />
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 bg-black/50 text-white rounded-full w-8 h-8 flex items-center justify-center text-lg hover:bg-black/80"
+        >×</button>
+      </div>
+    </div>
+  )
+}
 
 export default function ProductPageClient({ product }: { product: Product }) {
 
@@ -20,6 +38,7 @@ export default function ProductPageClient({ product }: { product: Product }) {
   const [selected, setSelected] = useState<SelectedOptions>(defaultOptions)
   const [displayImage, setDisplayImage] = useState<string>('')
   const [fading, setFading] = useState(false)
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
 
   const is3D = !!product.model_url
   const isLayered = !is3D && (!!product.base_layer || product.options.some((g) => g.isLayer))
@@ -75,8 +94,23 @@ export default function ProductPageClient({ product }: { product: Product }) {
       {/* Image viewer */}
       <div className="space-y-3">
         {is3D ? (
-          /* 3D configurator */
-          <SofaConfigurator product={product} selected={selected} />
+          <>
+            <SofaConfigurator product={product} selected={selected} />
+            {product.images.length > 0 && (
+              <div className="grid grid-cols-4 gap-2">
+                {product.images.map((img, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setLightboxSrc(img)}
+                    className="relative aspect-square bg-[#EDE8E0] rounded-sm overflow-hidden hover:ring-2 hover:ring-kova-brown transition-all"
+                  >
+                    <Image src={img} alt={`${product.name} ${i + 1}`} fill sizes="15vw" className="object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
+            {lightboxSrc && <ImageLightbox src={lightboxSrc} alt={product.name} onClose={() => setLightboxSrc(null)} />}
+          </>
         ) : isLayered ? (
           /* Transparent PNG layer compositor */
           <LayeredViewer product={product} selected={selected} />

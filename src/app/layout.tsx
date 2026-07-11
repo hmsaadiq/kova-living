@@ -27,6 +27,9 @@ export const metadata: Metadata = {
   description:
     'Kova Living crafts modern furniture to order. Configure your piece, choose your finish, and receive it built for your space.',
   keywords: ['furniture', 'modern furniture', 'made to order', 'custom furniture', 'DTC furniture'],
+  icons: {
+    icon: '/favicon.png',
+  },
   openGraph: {
     title: 'Kova Living — Modern Furniture, Made to Order',
     description: 'Configure your perfect piece. Built to order, built to last.',
